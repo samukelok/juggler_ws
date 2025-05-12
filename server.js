@@ -6,7 +6,13 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = require('socket.io')(server, {
+  cors: {
+    origin: "https://bluenroll.co.za",
+    methods: ["GET", "POST"]
+  }
+});
+
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
