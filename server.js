@@ -13,62 +13,88 @@ const io = socketIo(server, {
 });
 
 const activeCalls = {};
+const userToSocket = {}; // Map userId to socketId
 
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
-    
+
     socket.on('join-call', ({ callId, userId }) => {
         console.log(`User ${userId} joining call ${callId}`);
-        
+
         socket.join(callId);
         socket.callId = callId;
         socket.userId = userId;
-        
+
+        // Save socket ID mapping
+        userToSocket[userId] = socket.id;
+
+        // Register user in call
         if (!activeCalls[callId]) {
             activeCalls[callId] = new Set();
         }
         activeCalls[callId].add(userId);
-        
+
         // Notify others in the call
         socket.to(callId).emit('user-connected', userId);
-        
+
         // Send list of existing participants to the new user
         const participants = Array.from(activeCalls[callId]).filter(id => id !== userId);
         socket.emit('existing-participants', participants);
     });
-    
+
     socket.on('offer', ({ to, offer }) => {
-        console.log(`Offer from ${socket.userId} to ${to}`);
-        socket.to(to).emit('offer', { from: socket.userId, offer });
+        const targetSocketId = userToSocket[to];
+        if (targetSocketId) {
+            io.to(targetSocketId).emit('offer', { from: socket.userId, offer });
+        } else {
+            console.warn(`Offer target ${to} not found`);
+        }
     });
-    
+
     socket.on('answer', ({ to, answer }) => {
-        console.log(`Answer from ${socket.userId} to ${to}`);
-        socket.to(to).emit('answer', { from: socket.userId, answer });
+        const targetSocketId = userToSocket[to];
+        if (targetSocketId) {
+            io.to(targetSocketId).emit('answer', { from: socket.userId, answer });
+        } else {
+            console.warn(`Answer target ${to} not found`);
+        }
     });
-    
+
     socket.on('ice-candidate', ({ to, candidate }) => {
-        socket.to(to).emit('ice-candidate', { from: socket.userId, candidate });
+        const targetSocketId = userToSocket[to];
+        if (targetSocketId) {
+            io.to(targetSocketId).emit('ice-candidate', { from: socket.userId, candidate });
+        } else {
+            console.warn(`ICE candidate target ${to} not found`);
+        }
     });
-    
+
     socket.on('end-call', (callId) => {
         console.log(`Call ${callId} ended by ${socket.userId}`);
         io.to(callId).emit('call-ended');
-        delete activeCalls[callId];
+        if (activeCalls[callId]) {
+            activeCalls[callId].forEach(userId => {
+                delete userToSocket[userId];
+            });
+            delete activeCalls[callId];
+        }
     });
-    
+
     socket.on('disconnect', () => {
         if (socket.callId && socket.userId) {
             console.log(`User ${socket.userId} disconnected from call ${socket.callId}`);
-            
+
             if (activeCalls[socket.callId]) {
                 activeCalls[socket.callId].delete(socket.userId);
+
                 if (activeCalls[socket.callId].size === 0) {
                     delete activeCalls[socket.callId];
                 } else {
                     socket.to(socket.callId).emit('user-disconnected', socket.userId);
                 }
             }
+
+            delete userToSocket[socket.userId];
         }
     });
 });
