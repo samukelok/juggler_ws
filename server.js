@@ -7,14 +7,13 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*", // Allow all origins (update this in production)
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
 
 const activeCalls = {};
-const userToSocket = {}; // Map userId to socketId
-
+const userToSocket = {};
 io.on('connection', (socket) => {
     console.log('New client connected:', socket.id);
 
